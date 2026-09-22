@@ -29,8 +29,9 @@ const API = {
   delete: (p)    => API.request("DELETE", p),
 };
 
-// ===== CONSTANTS =====
+// ===== CONSTANTS & SOCKET =====
 const proctorChannel = new BroadcastChannel("proctor_session_channel");
+const socket = typeof io === "function" ? io() : null;
 
 // ===== STATE =====
 let students      = [];
@@ -679,90 +680,100 @@ clearSubmissionsBtn && clearSubmissionsBtn.addEventListener("click", async () =>
   }
 });
 
-// ===== BROADCAST LISTENER =====
+// ===== BROADCAST & SOCKET LISTENER =====
 function setupBroadcastListener() {
-  proctorChannel.onmessage = async (event) => {
-    const msg = event.data;
-    if (!msg || !msg.type) return;
+  if (socket) {
+    socket.emit("join", { role: "admin" });
+    socket.on("proctor_event", (msg) => {
+      handleProctorMessage(msg);
+    });
+  }
 
-    switch (msg.type) {
-      case "SESSION_START": {
-        if (msg.studentId) {
-          const st = students.find(s => s.studentId === msg.studentId);
-          if (st) {
-            st.status = "active";
-            renderStudentsTable();
-            if (!sessionMap[msg.studentId]) {
-              sessionMap[msg.studentId] = { status: "active", tabSwitches: 0, duration: "00:00", lastFrame: null };
-            } else {
-              sessionMap[msg.studentId].status = "active";
-            }
-            updateTileStatus(msg.studentId, "active");
-          }
-        }
-        appendAuditLog(`🟢 Student joined: ${msg.studentId || "Unknown"}`, "success");
-        logActivity(`Session started — ID: ${msg.studentId || "?"}`, "success");
-        break;
-      }
+  proctorChannel.onmessage = (event) => {
+    handleProctorMessage(event.data);
+  };
+}
 
-      case "SESSION_STATE": break;
+async function handleProctorMessage(msg) {
+  if (!msg || !msg.type) return;
 
-      case "STREAM_FRAME": {
-        if (msg.studentId && msg.frame) {
+  switch (msg.type) {
+    case "SESSION_START": {
+      if (msg.studentId) {
+        const st = students.find(s => s.studentId === msg.studentId);
+        if (st) {
+          st.status = "active";
+          renderStudentsTable();
           if (!sessionMap[msg.studentId]) {
             sessionMap[msg.studentId] = { status: "active", tabSwitches: 0, duration: "00:00", lastFrame: null };
+          } else {
+            sessionMap[msg.studentId].status = "active";
           }
-          updateTileFrame(msg.studentId, msg.frame, msg.sessionTimer || "00:00");
-        } else if (msg.frame) {
-          const firstActive = Object.keys(sessionMap).find(k => sessionMap[k].status === "active" || sessionMap[k].status === "warning");
-          if (firstActive) updateTileFrame(firstActive, msg.frame, msg.sessionTimer || "00:00");
+          updateTileStatus(msg.studentId, "active");
         }
-        break;
       }
-
-      case "TAB_SWITCH": {
-        const swId = msg.studentId || null;
-        if (swId && sessionMap[swId]) {
-          sessionMap[swId].tabSwitches = msg.count;
-          updateTileStatus(swId, "warning", msg.count);
-          setTimeout(() => {
-            if (sessionMap[swId] && sessionMap[swId].status === "warning") updateTileStatus(swId, "active");
-          }, 4000);
-        }
-        appendAuditLog(`⚠️ Focus lost — ${swId || "?"} (Total: ${msg.count})`, "warning");
-        logActivity(`Tab switch — ID: ${swId || "?"}`, "warning");
-        updateLiveSidebar();
-        break;
-      }
-
-      case "SUBMISSION": {
-        const d = msg.data || {};
-        // Refresh submissions from API (real data is in DB)
-        try {
-          await loadSubmissions();
-        } catch (_) {}
-        if (d.studentId && sessionMap[d.studentId]) {
-          sessionMap[d.studentId].status = "submitted";
-          updateTileStatus(d.studentId, "submitted");
-        }
-        appendAuditLog(`✅ Submitted: ${d.studentId || "?"}`, "success");
-        logActivity(`Submission received — ${[d.firstName, d.lastName].filter(Boolean).join(" ")} (${d.studentId || "?"})`, "success");
-        updateLiveSidebar();
-        break;
-      }
-
-      case "RTC_OFFER": {
-        if (msg.offer) await handleRTCOffer(msg.offer);
-        break;
-      }
-      case "RTC_ICE_CANDIDATE": {
-        if (adminPeer && msg.candidate) {
-          try { await adminPeer.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch(_) {}
-        }
-        break;
-      }
+      appendAuditLog(`🟢 Student joined: ${msg.studentId || "Unknown"}`, "success");
+      logActivity(`Session started — ID: ${msg.studentId || "?"}`, "success");
+      break;
     }
-  };
+
+    case "SESSION_STATE": break;
+
+    case "STREAM_FRAME": {
+      if (msg.studentId && msg.frame) {
+        if (!sessionMap[msg.studentId]) {
+          sessionMap[msg.studentId] = { status: "active", tabSwitches: 0, duration: "00:00", lastFrame: null };
+        }
+        updateTileFrame(msg.studentId, msg.frame, msg.sessionTimer || "00:00");
+      } else if (msg.frame) {
+        const firstActive = Object.keys(sessionMap).find(k => sessionMap[k].status === "active" || sessionMap[k].status === "warning");
+        if (firstActive) updateTileFrame(firstActive, msg.frame, msg.sessionTimer || "00:00");
+      }
+      break;
+    }
+
+    case "TAB_SWITCH": {
+      const swId = msg.studentId || null;
+      if (swId && sessionMap[swId]) {
+        sessionMap[swId].tabSwitches = msg.count;
+        updateTileStatus(swId, "warning", msg.count);
+        setTimeout(() => {
+          if (sessionMap[swId] && sessionMap[swId].status === "warning") updateTileStatus(swId, "active");
+        }, 4000);
+      }
+      appendAuditLog(`⚠️ Focus lost — ${swId || "?"} (Total: ${msg.count})`, "warning");
+      logActivity(`Tab switch — ID: ${swId || "?"}`, "warning");
+      updateLiveSidebar();
+      break;
+    }
+
+    case "SUBMISSION": {
+      const d = msg.data || {};
+      // Refresh submissions from API (real data is in DB)
+      try {
+        await loadSubmissions();
+      } catch (_) {}
+      if (d.studentId && sessionMap[d.studentId]) {
+        sessionMap[d.studentId].status = "submitted";
+        updateTileStatus(d.studentId, "submitted");
+      }
+      appendAuditLog(`✅ Submitted: ${d.studentId || "?"}`, "success");
+      logActivity(`Submission received — ${[d.firstName, d.lastName].filter(Boolean).join(" ")} (${d.studentId || "?"})`, "success");
+      updateLiveSidebar();
+      break;
+    }
+
+    case "RTC_OFFER": {
+      if (msg.offer) await handleRTCOffer(msg.offer);
+      break;
+    }
+    case "RTC_ICE_CANDIDATE": {
+      if (adminPeer && msg.candidate) {
+        try { await adminPeer.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch(_) {}
+      }
+      break;
+    }
+  }
 }
 
 // ===== WEBRTC (legacy single-feed fallback) =====

@@ -90,8 +90,17 @@ const photoStatusBadge     = document.getElementById("photoStatusBadge");
 const cameraScreenSubtitle = document.getElementById("cameraScreenSubtitle");
 const submitBtn            = document.getElementById("submitBtn");
 
-// ===== SESSION STATE =====
+// ===== SOCKET.IO & BROADCAST CHANNEL =====
 const proctorChannel = new BroadcastChannel("proctor_session_channel");
+const socket = typeof io === "function" ? io() : null;
+
+function broadcastProctorEvent(eventObj) {
+  try { proctorChannel.postMessage(eventObj); } catch (_) {}
+  if (socket && socket.connected) {
+    socket.emit("proctor_event", eventObj);
+  }
+}
+
 let loggedInStudent  = null;
 let proctorStream    = null;
 let sessionSeconds   = 0;
@@ -181,7 +190,11 @@ async function startProctoredSession() {
     setupAntiCheatingListeners();
     beginFrameStreaming();
 
-    proctorChannel.postMessage({
+    if (socket && loggedInStudent) {
+      socket.emit("join", { role: "student", studentId: loggedInStudent.studentId });
+    }
+
+    broadcastProctorEvent({
       type: "SESSION_START",
       timestamp: Date.now(),
       studentId: loggedInStudent ? loggedInStudent.studentId : null,
@@ -213,7 +226,7 @@ function beginFrameStreaming() {
     const frameData = proctorSnapshotCanvas.toDataURL("image/jpeg", 0.5);
     const m = String(Math.floor(sessionSeconds / 60)).padStart(2, "0");
     const s = String(sessionSeconds % 60).padStart(2, "0");
-    proctorChannel.postMessage({
+    broadcastProctorEvent({
       type: "STREAM_FRAME",
       frame: frameData,
       sessionTimer: `${m}:${s}`,
@@ -244,7 +257,7 @@ function setupAntiCheatingListeners() {
 function recordTabSwitch() {
   tabSwitchCount++;
   if (tabSwitchCounterEl) tabSwitchCounterEl.textContent = tabSwitchCount;
-  proctorChannel.postMessage({
+  broadcastProctorEvent({
     type: "TAB_SWITCH",
     count: tabSwitchCount,
     studentId: loggedInStudent ? loggedInStudent.studentId : null,
@@ -437,7 +450,7 @@ registrationForm.addEventListener("submit", async (e) => {
     });
 
     // Broadcast to admin
-    proctorChannel.postMessage({
+    broadcastProctorEvent({
       type: "SUBMISSION",
       data: { firstName, middleName, lastName, dob, state: selectedState, district, city,
               studentId: loggedInStudent ? loggedInStudent.studentId : "" },
@@ -485,7 +498,7 @@ proctorChannel.onmessage = (e) => {
   if (e.data && e.data.type === "ADMIN_READY") {
     // Admin is online — re-broadcast session start if already active
     if (isProctoringActive && loggedInStudent) {
-      proctorChannel.postMessage({
+      broadcastProctorEvent({
         type: "SESSION_START",
         studentId: loggedInStudent.studentId,
         timestamp: Date.now(),

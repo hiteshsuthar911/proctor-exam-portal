@@ -5,12 +5,45 @@
 
 require("dotenv").config();
 const express = require("express");
+const http = require("http");
 const cors = require("cors");
 const path = require("path");
+const { Server } = require("socket.io");
 const { connectDB, getIsConnected } = require("./config/db");
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+  },
+  maxHttpBufferSize: 5e6, // 5MB for video frame uploads
+});
+
 const PORT = process.env.PORT || 3000;
+
+// ─── Socket.io Real-time Proctoring ─────────────────────────────────────────
+io.on("connection", (socket) => {
+  socket.on("join", (data) => {
+    if (data && data.role === "admin") {
+      socket.join("admin-room");
+    } else if (data && data.role === "student") {
+      socket.join("student-room");
+      io.to("admin-room").emit("proctor_event", {
+        type: "SESSION_START",
+        studentId: data.studentId,
+        timestamp: Date.now(),
+      });
+    }
+  });
+
+  socket.on("proctor_event", (payload) => {
+    if (payload && payload.type) {
+      io.to("admin-room").emit("proctor_event", payload);
+    }
+  });
+});
 
 // ─── Middleware ──────────────────────────────────────────────────────────────
 app.use(cors({
@@ -80,9 +113,9 @@ async function start() {
   // Connect to DB asynchronously (doesn't block server from binding PORT)
   connectDB().catch(err => console.error("Initial DB connection failed:", err.message));
 
-  app.listen(PORT, () => {
+  server.listen(PORT, () => {
     console.log(`\n======================================================`);
-    console.log(`🚀 Exam & Proctoring Portal is online!`);
+    console.log(`🚀 Exam & Proctoring Portal is online (with Socket.IO)!`);
     console.log(`📡 URL: http://localhost:${PORT}`);
     console.log(`🏛️ Candidate Form (90s UI): http://localhost:${PORT}/index.html`);
     console.log(`📊 Admin Panel:             http://localhost:${PORT}/admin.html`);
