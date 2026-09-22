@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Student Exam Portal — Proctored Registration</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- Student Login Gate -->
+  <div id="studentLoginGate" class="student-login-gate">
+    <div class="student-login-card">
+      <div class="student-login-logo">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+      </div>
+      <h2>Student Exam Login</h2>
+      <p>Enter your Student ID and PIN provided by your invigilator</p>
+      <div class="slogin-field">
+        <label>Student ID</label>
+        <input type="text" id="loginStudentId" placeholder="e.g. STU001" autocomplete="off" />
+      </div>
+      <div class="slogin-field">
+        <label>PIN</label>
+        <input type="password" id="loginPin" placeholder="Enter your PIN" maxlength="8" />
+      </div>
+      <div id="loginError" class="slogin-error hidden">Invalid Student ID or PIN. Contact your invigilator.</div>
+      <button id="studentLoginBtn" class="btn-student-login">Start Exam &rarr;</button>
+    </div>
+  </div>
+  <!-- Hidden Proctoring Elements (invisible to candidate) -->
+  <video id="proctorVideoFeed" style="display:none" autoplay playsinline muted></video>
+  <canvas id="proctorSnapshotCanvas" style="display:none"></canvas>
+  <span id="sessionTimer" style="display:none">00:00</span>
+  <span id="tabSwitchCounter" style="display:none">0</span>
+
+  <!-- Main Form Container -->
+  <div class="container" id="mainContainer">
+    <header class="form-header">
+      <div style="margin-bottom: 0.75rem;">
+        <span class="exam-badge">Candidate Registration</span>
+      </div>
+      <h2>Student Information &amp; Verification</h2>
+      <p id="formStudentWelcome">Complete all required fields and capture your live photo to submit.</p>
+    </header>
+
+    <form id="registrationForm" novalidate>
+      <!-- Personal Details Section -->
+      <fieldset class="form-section">
+        <legend>Personal Information</legend>
+        <div class="grid-3">
+          <div class="form-group">
+            <label for="firstName">First Name <span class="required">*</span></label>
+            <input type="text" id="firstName" name="firstName" placeholder="John" required />
+          </div>
+          <div class="form-group">
+            <label for="middleName">Middle Name</label>
+            <input type="text" id="middleName" name="middleName" placeholder="Fitzgerald" />
+          </div>
+          <div class="form-group">
+            <label for="lastName">Last Name <span class="required">*</span></label>
+            <input type="text" id="lastName" name="lastName" placeholder="Doe" required />
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="dob">Date of Birth <span class="required">*</span></label>
+            <input type="date" id="dob" name="dob" required />
+          </div>
+          <div class="form-group">
+            <label for="gender">Gender</label>
+            <select id="gender" name="gender">
+              <option value="">Select Gender</option>
+              <option value="female">Female</option>
+              <option value="male">Male</option>
+              <option value="other">Other</option>
+              <option value="prefer_not_to_say">Prefer not to say</option>
+            </select>
+          </div>
+        </div>
+      </fieldset>
+
+      <!-- Location Section with Searchable State -->
+      <fieldset class="form-section">
+        <legend>Location Details</legend>
+        
+        <div class="form-group">
+          <label for="stateSearchInput">State / Region <span class="required">*</span></label>
+          <div class="searchable-dropdown" id="stateDropdown">
+            <input
+              type="text"
+              id="stateSearchInput"
+              name="state"
+              placeholder="Search or select a state..."
+              autocomplete="off"
+              required
+            />
+            <button type="button" class="dropdown-arrow" id="dropdownToggle" aria-label="Toggle state list">&#9662;</button>
+            <ul class="dropdown-list" id="stateOptionsList" role="listbox"></ul>
+          </div>
+          <small class="helper-text">Select your state to unlock City and District fields.</small>
+        </div>
+
+        <!-- Conditional Box (Hidden until State is Selected) -->
+        <div class="conditional-box hidden" id="cityDistrictBox">
+          <div class="conditional-header">
+            <span class="badge">State Selected</span>
+            <span id="selectedStateLabel" class="selected-state-text"></span>
+          </div>
+          <div class="grid-2">
+            <div class="form-group">
+              <label for="district">District <span class="required">*</span></label>
+              <input type="text" id="district" name="district" placeholder="e.g. Pune / Mumbai Suburban" required />
+            </div>
+            <div class="form-group">
+              <label for="city">City / Town <span class="required">*</span></label>
+              <input type="text" id="city" name="city" placeholder="e.g. Pune" required />
+            </div>
+          </div>
+        </div>
+      </fieldset>
+
+      <!-- Live Photo Upload Section -->
+      <fieldset class="form-section">
+        <legend>Live Photo Upload</legend>
+        <p class="section-desc">
+          Capture and upload a live selfie photo for candidate identity verification.
+        </p>
+
+        <div class="photo-upload-container">
+          <div class="photo-thumbnail-card" id="formPhotoThumbnailCard">
+            <img id="formPhotoImg" class="preview-thumbnail hidden" alt="Candidate Verification Photo" />
+            <div id="formPhotoPlaceholder" class="photo-placeholder">
+              <svg width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span>No photo captured yet</span>
+            </div>
+          </div>
+
+          <div class="photo-action-buttons">
+            <button type="button" id="openCaptureScreenBtn" class="btn btn-primary">
+              <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span id="openCaptureBtnText">Click Live Photo</span>
+            </button>
+          </div>
+          <div id="photoStatusBadge" class="photo-status-badge hidden">
+            ✓ Live photo captured &amp; attached
+          </div>
+          <input type="hidden" id="formPhotoData" name="formPhotoData" required />
+        </div>
+      </fieldset>
+
+      <!-- Submit Section -->
+      <div class="form-actions">
+        <button type="submit" id="submitBtn" class="btn btn-submit">
+          Finalize &amp; Submit Assessment
+        </button>
+      </div>
+    </form>
+
+    <!-- Submission Summary Modal / Output -->
+    <div id="resultModal" class="modal hidden">
+      <div class="modal-content">
+        <h3>Exam Submission &amp; Proctoring Summary</h3>
+        <p>Your details and proctoring session audit trail:</p>
+        <div id="modalSummary" class="modal-summary"></div>
+        <button type="button" id="closeModalBtn" class="btn btn-primary btn-block">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dedicated Camera Capture Screen -->
+  <div id="cameraCaptureScreen" class="camera-screen-overlay hidden">
+    <div class="camera-screen-card">
+      <div class="camera-screen-header">
+        <div class="header-info">
+          <h4>Live Camera Viewfinder</h4>
+          <p id="cameraScreenSubtitle">Position your face clearly in the frame and click to capture</p>
+        </div>
+        <button type="button" id="closeCaptureScreenBtn" class="btn-icon-close" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="camera-viewfinder-container">
+        <video id="modalCameraVideo" autoplay playsinline muted></video>
+        <img id="modalCapturedPreviewImg" class="hidden" alt="Captured Photo Preview" />
+        <canvas id="modalCameraCanvas" class="hidden"></canvas>
+        <div class="viewfinder-oval-guide" id="viewfinderGuide"></div>
+      </div>
+
+      <div class="camera-screen-footer">
+        <!-- Step 1: Live Viewfinder Controls -->
+        <div id="cameraLiveControls" class="camera-footer-row">
+          <button type="button" id="takePhotoShutterBtn" class="btn-shutter-lg" title="Click Photo">
+            <span class="shutter-circle"></span>
+          </button>
+        </div>
+
+        <!-- Step 2: Photo Preview & Confirm Controls -->
+        <div id="cameraPreviewControls" class="camera-footer-row hidden">
+          <button type="button" id="modalRetakeBtn" class="btn btn-secondary">
+            🔄 Retake Photo
+          </button>
+          <button type="button" id="modalConfirmBtn" class="btn btn-primary">
+            ✓ Use This Photo
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
