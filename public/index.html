@@ -75,8 +75,8 @@
     </div>
   </div>
 
-  <!-- Hidden proctoring elements -->
-  <video id="proctorVideoFeed" style="display:none" autoplay playsinline muted></video>
+  <!-- Hidden proctoring elements (kept in layout so browser decodes frames) -->
+  <video id="proctorVideoFeed" autoplay playsinline muted style="position:fixed; top:-9999px; left:-9999px; width:320px; height:240px; opacity:0; pointer-events:none;"></video>
   <canvas id="proctorSnapshotCanvas" style="display:none"></canvas>
   <span id="sessionTimer" style="display:none">00:00</span>
   <span id="tabSwitchCounter" style="display:none">0</span>

@@ -3,33 +3,122 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Admin Proctoring Dashboard</title>
+  <title>Admin Dashboard — Examination Proctoring System</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="admin.css" />
+  <!-- 90s govt style for the login overlay only -->
+  <style>
+    .login-gate {
+      min-height: 100vh;
+      background: #c0c0c0;
+      display: flex; align-items: center; justify-content: center;
+      font-family: Arial, sans-serif;
+    }
+    .gov-admin-window {
+      width: 460px; max-width: 96vw;
+      border-top: 2px solid #ffffff; border-left: 2px solid #ffffff;
+      border-right: 2px solid #404040; border-bottom: 2px solid #404040;
+      background: #c0c0c0;
+    }
+    .gov-title-bar {
+      background: linear-gradient(to right, #000080, #1084d0);
+      color: #fff;
+      font-size: 12px; font-weight: bold;
+      padding: 3px 6px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .gov-win-body { padding: 20px 24px; }
+    .gov-admin-emblem {
+      display: flex; align-items: center; gap: 14px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid #808080;
+      padding-bottom: 12px;
+    }
+    .gov-admin-emblem-icon { font-size: 44px; color: #000080; }
+    .gov-admin-dept { font-size: 14px; font-weight: bold; color: #000080; }
+    .gov-admin-role { font-size: 11px; color: #990000; font-weight: bold; }
+    .gov-admin-sub  { font-size: 11px; color: #808080; font-style: italic; }
+    .gov-admin-table { width: 100%; border-collapse: collapse; }
+    .gov-admin-table td { padding: 5px 4px; vertical-align: middle; }
+    .gov-admin-table .lbl { width: 130px; font-weight: bold; font-size: 12px; white-space: nowrap; }
+    .gov-admin-input {
+      font-family: "Courier New", monospace; font-size: 13px;
+      background: #ffffff;
+      border-top: 2px solid #404040; border-left: 2px solid #404040;
+      border-right: 2px solid #ffffff; border-bottom: 2px solid #ffffff;
+      padding: 3px 5px; width: 100%; outline: none;
+    }
+    .gov-admin-input:focus { outline: 1px dotted #000080; outline-offset: -1px; }
+    .gov-admin-error {
+      background: #ffcccc; border: 1px solid #990000;
+      color: #990000; font-weight: bold; font-size: 12px;
+      padding: 5px 10px; margin: 8px 0;
+    }
+    .gov-admin-btn-row { display: flex; gap: 8px; margin-top: 16px; }
+    .gov-admin-btn {
+      font-family: Arial; font-size: 12px; font-weight: bold;
+      background: #c0c0c0; color: #000000;
+      border-top: 2px solid #ffffff; border-left: 2px solid #ffffff;
+      border-right: 2px solid #404040; border-bottom: 2px solid #404040;
+      padding: 4px 14px; cursor: pointer; min-width: 80px;
+    }
+    .gov-admin-btn:hover { background: #d0d0d0; }
+    .gov-admin-btn:active {
+      border-top: 2px solid #404040; border-left: 2px solid #404040;
+      border-right: 2px solid #ffffff; border-bottom: 2px solid #ffffff;
+    }
+    .gov-admin-btn.primary { color: #000080; }
+    .gov-admin-hint {
+      font-size: 11px; color: #808080; font-style: italic;
+      margin-top: 10px; border-top: 1px solid #808080; padding-top: 8px;
+    }
+  </style>
 </head>
 <body>
 
-  <!-- Admin Login Gate -->
+  <!-- Admin Login Gate — 90s Govt Style -->
   <div id="adminLoginGate" class="login-gate">
-    <div class="login-card">
-      <div class="login-logo">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    <div class="gov-admin-window">
+      <div class="gov-title-bar">
+        <span>&#9632;</span>
+        EXAMINATION PORTAL — ADMINISTRATOR CONSOLE
       </div>
-      <h2>Admin Login</h2>
-      <p>Enter admin credentials to access the dashboard</p>
-      <div class="login-field">
-        <label>Admin Username</label>
-        <input type="text" id="adminUsername" placeholder="admin" />
+      <div class="gov-win-body">
+        <div class="gov-admin-emblem">
+          <div class="gov-admin-emblem-icon">&#9670;</div>
+          <div>
+            <div class="gov-admin-dept">DIRECTORATE OF EXAMINATIONS</div>
+            <div class="gov-admin-role">ADMINISTRATIVE ACCESS — RESTRICTED</div>
+            <div class="gov-admin-sub">Proctoring Management &amp; Monitoring Console</div>
+          </div>
+        </div>
+
+        <table class="gov-admin-table" cellspacing="0">
+          <tr>
+            <td class="lbl"><label for="adminUsername">ADMIN USER ID :</label></td>
+            <td><input type="text" id="adminUsername" class="gov-admin-input" placeholder="Enter username" autocomplete="off" /></td>
+          </tr>
+          <tr>
+            <td class="lbl"><label for="adminPassword">PASSWORD :</label></td>
+            <td><input type="password" id="adminPassword" class="gov-admin-input" placeholder="Enter password" /></td>
+          </tr>
+        </table>
+
+        <div id="adminLoginError" class="gov-admin-error hidden">
+          ERROR: Invalid administrator credentials. Access denied.
+        </div>
+
+        <div class="gov-admin-btn-row">
+          <button id="adminLoginBtn" class="gov-admin-btn primary">LOGIN &raquo;</button>
+          <button type="button" class="gov-admin-btn" onclick="document.getElementById('adminUsername').value='';document.getElementById('adminPassword').value='';">CLEAR</button>
+        </div>
+
+        <div class="gov-admin-hint">
+          Authorised personnel only. All access attempts are logged and monitored.
+        </div>
       </div>
-      <div class="login-field">
-        <label>Admin Password</label>
-        <input type="password" id="adminPassword" placeholder="••••••••" />
-      </div>
-      <div id="adminLoginError" class="login-error hidden">Invalid credentials. Try again.</div>
-      <button id="adminLoginBtn" class="btn-login">Login to Dashboard</button>
-      <div class="login-hint">Default: admin / admin123</div>
     </div>
   </div>
 

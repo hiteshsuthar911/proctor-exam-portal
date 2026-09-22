@@ -702,7 +702,6 @@ function setupBroadcastListener() {
         }
         appendAuditLog(`🟢 Student joined: ${msg.studentId || "Unknown"}`, "success");
         logActivity(`Session started — ID: ${msg.studentId || "?"}`, "success");
-        proctorChannel.postMessage({ type: "ADMIN_READY" });
         break;
       }
 

@@ -59,6 +59,11 @@ app.use("/api/*", (req, res) => {
   res.status(404).json({ success: false, message: `API route not found: ${req.originalUrl}` });
 });
 
+// ─── Direct page routes ──────────────────────────────────────────────────
+app.get(["/admin", "/admin/"], (req, res) => {
+  res.sendFile(path.join(publicDir, "admin.html"));
+});
+
 // ─── Fallback: serve index.html for all other routes ────────────────────────
 app.get("*", (req, res) => {
   res.sendFile(path.join(publicDir, "index.html"));

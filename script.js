@@ -1,600 +1,518 @@
-// List of States and Union Territories (India)
+/**
+ * script.js — Student Form + Proctoring Logic
+ * Calls the REST API (/api) instead of localStorage.
+ */
+
+"use strict";
+
+// ===== API HELPER =====
+const API = {
+  base: "",   // same-origin; will be /api/*
+  token: null,
+
+  /** Fetch wrapper with automatic Bearer token and error normalisation */
+  async request(method, path, body) {
+    const headers = { "Content-Type": "application/json" };
+    if (this.token) headers["Authorization"] = `Bearer ${this.token}`;
+
+    const res = await fetch(`/api${path}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+    return data;
+  },
+
+  post: (path, body) => API.request("POST", path, body),
+  get:  (path)       => API.request("GET", path),
+};
+
+// ===== STATES LIST =====
 const STATES = [
-  "Andhra Pradesh",
-  "Arunachal Pradesh",
-  "Assam",
-  "Bihar",
-  "Chhattisgarh",
-  "Goa",
-  "Gujarat",
-  "Haryana",
-  "Himachal Pradesh",
-  "Jharkhand",
-  "Karnataka",
-  "Kerala",
-  "Madhya Pradesh",
-  "Maharashtra",
-  "Manipur",
-  "Meghalaya",
-  "Mizoram",
-  "Nagaland",
-  "Odisha",
-  "Punjab",
-  "Rajasthan",
-  "Sikkim",
-  "Tamil Nadu",
-  "Telangana",
-  "Tripura",
-  "Uttar Pradesh",
-  "Uttarakhand",
-  "West Bengal",
-  "Andaman and Nicobar Islands",
-  "Chandigarh",
-  "Dadra and Nagar Haveli and Daman and Diu",
-  "Delhi (NCT)",
-  "Jammu and Kashmir",
-  "Ladakh",
-  "Lakshadweep",
-  "Puducherry"
+  "Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chhattisgarh","Goa",
+  "Gujarat","Haryana","Himachal Pradesh","Jharkhand","Karnataka","Kerala",
+  "Madhya Pradesh","Maharashtra","Manipur","Meghalaya","Mizoram","Nagaland",
+  "Odisha","Punjab","Rajasthan","Sikkim","Tamil Nadu","Telangana","Tripura",
+  "Uttar Pradesh","Uttarakhand","West Bengal",
+  "Andaman and Nicobar Islands","Chandigarh",
+  "Dadra and Nagar Haveli and Daman and Diu","Delhi (NCT)",
+  "Jammu and Kashmir","Ladakh","Lakshadweep","Puducherry",
 ];
 
-// ===== STUDENT LOGIN GATE =====
-const studentLoginGate  = document.getElementById("studentLoginGate");
-const loginStudentIdEl  = document.getElementById("loginStudentId");
-const loginPinEl        = document.getElementById("loginPin");
-const loginErrorEl      = document.getElementById("loginError");
-const studentLoginBtn   = document.getElementById("studentLoginBtn");
-const mainContainerEl   = document.getElementById("mainContainer");
-const formStudentWelcome = document.getElementById("formStudentWelcome");
+// ===== DOM REFS =====
+const studentLoginGate     = document.getElementById("studentLoginGate");
+const loginStudentIdEl     = document.getElementById("loginStudentId");
+const loginPinEl           = document.getElementById("loginPin");
+const loginErrorEl         = document.getElementById("loginError");
+const studentLoginBtn      = document.getElementById("studentLoginBtn");
+const mainContainerEl      = document.getElementById("mainContainer");
+const formStudentWelcome   = document.getElementById("formStudentWelcome");
+const formStudentBadge     = document.getElementById("formStudentBadge");
 
-let loggedInStudent = null; // Will hold student object after login
+const stateInput           = document.getElementById("stateSearchInput");
+const dropdownToggle       = document.getElementById("dropdownToggle");
+const stateOptionsList     = document.getElementById("stateOptionsList");
+const cityDistrictBox      = document.getElementById("cityDistrictBox");
+const selectedStateLabel   = document.getElementById("selectedStateLabel");
+const districtInput        = document.getElementById("district");
+const cityInput            = document.getElementById("city");
+const registrationForm     = document.getElementById("registrationForm");
 
-function getRegisteredStudents() {
-  try {
-    const raw = localStorage.getItem("proctor_students_v2");
-    return raw ? JSON.parse(raw) : [];
-  } catch(e) { return []; }
+const proctorVideoFeed     = document.getElementById("proctorVideoFeed");
+const proctorSnapshotCanvas= document.getElementById("proctorSnapshotCanvas");
+const sessionTimerEl       = document.getElementById("sessionTimer");
+const tabSwitchCounterEl   = document.getElementById("tabSwitchCounter");
+
+const resultModal          = document.getElementById("resultModal");
+const modalSummary         = document.getElementById("modalSummary");
+const closeModalBtn        = document.getElementById("closeModalBtn");
+
+const openCaptureScreenBtn = document.getElementById("openCaptureScreenBtn");
+const cameraCaptureScreen  = document.getElementById("cameraCaptureScreen");
+const closeCaptureScreenBtn= document.getElementById("closeCaptureScreenBtn");
+const modalCameraVideo     = document.getElementById("modalCameraVideo");
+const modalCapturedPreviewImg = document.getElementById("modalCapturedPreviewImg");
+const modalCameraCanvas    = document.getElementById("modalCameraCanvas");
+const viewfinderGuide      = document.getElementById("viewfinderGuide");
+const takePhotoShutterBtn  = document.getElementById("takePhotoShutterBtn");
+const modalRetakeBtn       = document.getElementById("modalRetakeBtn");
+const modalConfirmBtn      = document.getElementById("modalConfirmBtn");
+const cameraLiveControls   = document.getElementById("cameraLiveControls");
+const cameraPreviewControls= document.getElementById("cameraPreviewControls");
+
+const formPhotoData        = document.getElementById("formPhotoData");
+const formPhotoImg         = document.getElementById("formPhotoImg");
+const formPhotoPlaceholder = document.getElementById("formPhotoPlaceholder");
+const photoStatusBadge     = document.getElementById("photoStatusBadge");
+const cameraScreenSubtitle = document.getElementById("cameraScreenSubtitle");
+const submitBtn            = document.getElementById("submitBtn");
+
+// ===== SESSION STATE =====
+const proctorChannel = new BroadcastChannel("proctor_session_channel");
+let loggedInStudent  = null;
+let proctorStream    = null;
+let sessionSeconds   = 0;
+let timerInterval    = null;
+let streamInterval   = null;
+let tabSwitchCount   = 0;
+let isProctoringActive = false;
+let selectedState    = "";
+
+// ===== STUDENT LOGIN =====
+function showLoginError(msg) {
+  loginErrorEl.textContent = `ERROR: ${msg}`;
+  loginErrorEl.classList.remove("hidden");
 }
+function hideLoginError() { loginErrorEl.classList.add("hidden"); }
 
-function handleStudentLogin() {
-  const inputId  = (loginStudentIdEl.value || "").trim().toUpperCase();
-  const inputPin = (loginPinEl.value || "").trim();
+studentLoginBtn.addEventListener("click", handleStudentLogin);
+loginPinEl.addEventListener("keydown", e => { if (e.key === "Enter") handleStudentLogin(); });
+loginStudentIdEl.addEventListener("keydown", e => { if (e.key === "Enter") loginPinEl.focus(); });
 
-  if (!inputId || !inputPin) {
-    loginErrorEl.textContent = "Please enter both Student ID and PIN.";
-    loginErrorEl.classList.remove("hidden");
+async function handleStudentLogin() {
+  hideLoginError();
+  const studentId = (loginStudentIdEl.value || "").trim();
+  const pin       = (loginPinEl.value || "").trim();
+
+  if (!studentId || !pin) {
+    showLoginError("Both Candidate ID and PIN are required.");
     return;
   }
 
-  const students = getRegisteredStudents();
-  const matched  = students.find(s => s.studentId === inputId && s.pin === inputPin);
+  studentLoginBtn.textContent = "VERIFYING...";
+  studentLoginBtn.disabled = true;
 
-  if (matched) {
-    loggedInStudent = matched;
+  try {
+    const resp = await API.post("/auth/student", { studentId, pin });
+    API.token = resp.token;
+    loggedInStudent = resp.student;
+    sessionStorage.setItem("examToken", resp.token);
+    sessionStorage.setItem("examStudent", JSON.stringify(resp.student));
+
+    // Show form
     studentLoginGate.style.display = "none";
     mainContainerEl.classList.remove("hidden");
+
     if (formStudentWelcome) {
-      formStudentWelcome.textContent = `Welcome, ${matched.name}! Please complete all fields and capture your verification photo.`;
+      formStudentWelcome.textContent =
+        `Welcome, ${loggedInStudent.name}. Candidate ID: ${loggedInStudent.studentId}. ` +
+        `Examination: ${loggedInStudent.exam || "General"}. Please complete all mandatory fields (*).`;
     }
-    // Auto-start background proctoring camera after login click
+    if (formStudentBadge) {
+      formStudentBadge.textContent = loggedInStudent.studentId;
+    }
+
+    // Start proctoring (camera starts only after user click — this IS a click event)
     startProctoredSession();
-  } else {
-    loginErrorEl.textContent = "Invalid Student ID or PIN. Please contact your invigilator.";
-    loginErrorEl.classList.remove("hidden");
+
+  } catch (err) {
+    showLoginError(err.message || "Invalid Candidate ID or PIN. Contact your invigilator.");
     loginPinEl.value = "";
     loginPinEl.focus();
+  } finally {
+    studentLoginBtn.textContent = "PROCEED TO EXAMINATION »";
+    studentLoginBtn.disabled = false;
   }
 }
 
-if (studentLoginBtn) studentLoginBtn.addEventListener("click", handleStudentLogin);
-if (loginPinEl) loginPinEl.addEventListener("keydown", e => { if (e.key === "Enter") handleStudentLogin(); });
-if (loginStudentIdEl) loginStudentIdEl.addEventListener("keydown", e => { if (e.key === "Enter") loginPinEl && loginPinEl.focus(); });
-
-// Hide main form initially until login
-if (mainContainerEl) mainContainerEl.classList.add("hidden");
-
-// Form & Dropdown Elements
-const stateInput = document.getElementById("stateSearchInput");
-const dropdownToggle = document.getElementById("dropdownToggle");
-const stateOptionsList = document.getElementById("stateOptionsList");
-const cityDistrictBox = document.getElementById("cityDistrictBox");
-const selectedStateLabel = document.getElementById("selectedStateLabel");
-const districtInput = document.getElementById("district");
-const cityInput = document.getElementById("city");
-const registrationForm = document.getElementById("registrationForm");
-const mainContainer = document.getElementById("mainContainer");
-
-// Proctoring Elements
-const proctorHud = document.getElementById("proctorHud");
-const proctorVideoFeed = document.getElementById("proctorVideoFeed");
-const proctorSnapshotCanvas = document.getElementById("proctorSnapshotCanvas");
-const hudCameraPending = document.getElementById("hudCameraPending");
-const sessionTimer = document.getElementById("sessionTimer");
-const tabSwitchCounter = document.getElementById("tabSwitchCounter");
-
-// Result Modal
-const resultModal = document.getElementById("resultModal");
-const modalSummary = document.getElementById("modalSummary");
-const closeModalBtn = document.getElementById("closeModalBtn");
-
-// Dedicated Camera Screen Elements
-const openCaptureScreenBtn = document.getElementById("openCaptureScreenBtn");
-const openCaptureBtnText = document.getElementById("openCaptureBtnText");
-const cameraCaptureScreen = document.getElementById("cameraCaptureScreen");
-const closeCaptureScreenBtn = document.getElementById("closeCaptureScreenBtn");
-const cameraScreenSubtitle = document.getElementById("cameraScreenSubtitle");
-const modalCameraVideo = document.getElementById("modalCameraVideo");
-const modalCapturedPreviewImg = document.getElementById("modalCapturedPreviewImg");
-const modalCameraCanvas = document.getElementById("modalCameraCanvas");
-const viewfinderGuide = document.getElementById("viewfinderGuide");
-const cameraLiveControls = document.getElementById("cameraLiveControls");
-const cameraPreviewControls = document.getElementById("cameraPreviewControls");
-const takePhotoShutterBtn = document.getElementById("takePhotoShutterBtn");
-const modalRetakeBtn = document.getElementById("modalRetakeBtn");
-const modalConfirmBtn = document.getElementById("modalConfirmBtn");
-
-// Form Thumbnail Preview Elements
-const formPhotoImg = document.getElementById("formPhotoImg");
-const formPhotoPlaceholder = document.getElementById("formPhotoPlaceholder");
-const photoStatusBadge = document.getElementById("photoStatusBadge");
-const formPhotoData = document.getElementById("formPhotoData");
-let tempPhotoDataUrl = null;
-
-// Proctoring Session State & BroadcastChannel
-const proctorChannel = new BroadcastChannel("proctor_session_channel");
-let proctorMediaStream = null;
-let sessionSeconds = 0;
-let timerInterval = null;
-let streamInterval = null;
-let tabSwitchCount = 0;
-let isProctoringActive = false;
-
-// --- State Searchable Dropdown ---
-function populateStateList(filterText = "") {
-  stateOptionsList.innerHTML = "";
-  const query = filterText.trim().toLowerCase();
-
-  const filtered = STATES.filter((state) =>
-    state.toLowerCase().includes(query)
-  );
-
-  if (filtered.length === 0) {
-    const emptyLi = document.createElement("li");
-    emptyLi.textContent = "No matching states found";
-    emptyLi.className = "no-match";
-    stateOptionsList.appendChild(emptyLi);
-  } else {
-    filtered.forEach((state) => {
-      const li = document.createElement("li");
-      li.textContent = state;
-      li.setAttribute("role", "option");
-      li.addEventListener("mousedown", (e) => {
-        e.preventDefault();
-        selectState(state);
-      });
-      stateOptionsList.appendChild(li);
-    });
-  }
-}
-
-function openDropdown() {
-  populateStateList(stateInput.value);
-  stateOptionsList.classList.add("show");
-}
-
-function closeDropdown() {
-  stateOptionsList.classList.remove("show");
-}
-
-function selectState(stateName) {
-  stateInput.value = stateName;
-  closeDropdown();
-  showConditionalBox(stateName);
-}
-
-function showConditionalBox(stateName) {
-  selectedStateLabel.textContent = stateName;
-  cityDistrictBox.classList.remove("hidden");
-  districtInput.setAttribute("required", "required");
-  cityInput.setAttribute("required", "required");
-}
-
-function hideConditionalBox() {
-  cityDistrictBox.classList.add("hidden");
-  districtInput.removeAttribute("required");
-  cityInput.removeAttribute("required");
-  districtInput.value = "";
-  cityInput.value = "";
-}
-
-stateInput.addEventListener("focus", openDropdown);
-stateInput.addEventListener("input", (e) => {
-  populateStateList(e.target.value);
-  stateOptionsList.classList.add("show");
-
-  const match = STATES.find(
-    (s) => s.toLowerCase() === e.target.value.trim().toLowerCase()
-  );
-  if (match) {
-    showConditionalBox(match);
-  } else {
-    hideConditionalBox();
-  }
-});
-
-stateInput.addEventListener("blur", () => {
-  setTimeout(closeDropdown, 150);
-});
-
-dropdownToggle.addEventListener("click", () => {
-  if (stateOptionsList.classList.contains("show")) {
-    closeDropdown();
-  } else {
-    stateInput.focus();
-    openDropdown();
-  }
-});
-
-// --- Proctoring Session Logic ---
+// ===== PROCTORING SESSION =====
 async function startProctoredSession() {
-  if (isProctoringActive || proctorMediaStream) return;
-
-  if (hudCameraPending) {
-    hudCameraPending.textContent = "Requesting camera...";
-    hudCameraPending.classList.remove("hidden");
-  }
-
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    if (hudCameraPending) hudCameraPending.textContent = "Camera unsupported";
-    return;
-  }
-
+  if (isProctoringActive) return;
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: "user",
-        width: { ideal: 640 },
-        height: { ideal: 480 }
-      },
-      audio: false
+      video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+      audio: false,
     });
 
-    proctorMediaStream = stream;
+    proctorStream = stream;
     proctorVideoFeed.srcObject = stream;
+    try { await proctorVideoFeed.play(); } catch (_) {}
 
-    // Connect stream to modal camera screen
     if (modalCameraVideo) {
       modalCameraVideo.srcObject = stream;
+      try { await modalCameraVideo.play(); } catch (_) {}
     }
 
-    // Enable session UI
     isProctoringActive = true;
-
-    // Start Session Timer
     startSessionTimer();
-
-    // Start Integrity Event Listeners
     setupAntiCheatingListeners();
+    beginFrameStreaming();
 
-    // Broadcast session start to Admin Dashboard
     proctorChannel.postMessage({
       type: "SESSION_START",
       timestamp: Date.now(),
-      studentId: loggedInStudent ? loggedInStudent.studentId : null
+      studentId: loggedInStudent ? loggedInStudent.studentId : null,
     });
 
-    // Establish direct high-speed WebRTC video stream to Admin Dashboard
-    initiateWebRTCStream();
-
-    // High-performance fallback frame streamer (120ms ~ 8.5 FPS)
-    streamInterval = setInterval(() => {
-      if (!isProctoringActive || !proctorVideoFeed.videoWidth) return;
-      proctorSnapshotCanvas.width = 280;
-      proctorSnapshotCanvas.height = 210;
-      const ctx = proctorSnapshotCanvas.getContext("2d");
-      ctx.drawImage(proctorVideoFeed, 0, 0, 280, 210);
-      const frameData = proctorSnapshotCanvas.toDataURL("image/jpeg", 0.5);
-      const mins = String(Math.floor(sessionSeconds / 60)).padStart(2, "0");
-      const secs = String(sessionSeconds % 60).padStart(2, "0");
-      proctorChannel.postMessage({
-        type: "STREAM_FRAME",
-        frame: frameData,
-        sessionTimer: `${mins}:${secs}`,
-        tabSwitches: tabSwitchCount,
-        studentId: loggedInStudent ? loggedInStudent.studentId : null
-      });
-    }, 120);
   } catch (err) {
-    console.error("Camera access failed:", err);
+    console.warn("Camera access failed:", err.name);
   }
 }
-
-// --- WebRTC Peer-to-Peer Streaming (30-60 FPS, Zero Latency) ---
-let peerConnection = null;
-
-async function initiateWebRTCStream() {
-  if (!proctorMediaStream) return;
-  try {
-    if (peerConnection) {
-      peerConnection.close();
-      peerConnection = null;
-    }
-    peerConnection = new RTCPeerConnection();
-    proctorMediaStream.getTracks().forEach((track) => {
-      peerConnection.addTrack(track, proctorMediaStream);
-    });
-
-    peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        proctorChannel.postMessage({ type: "RTC_ICE_CANDIDATE", candidate: event.candidate });
-      }
-    };
-
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    proctorChannel.postMessage({ type: "RTC_OFFER", offer: peerConnection.localDescription });
-  } catch (e) {
-    console.warn("WebRTC setup notice:", e);
-  }
-}
-
-// Handle signals from Admin Dashboard
-proctorChannel.onmessage = async (event) => {
-  const msg = event.data;
-  if (!msg || !msg.type) return;
-
-  if (msg.type === "ADMIN_READY") {
-    if (isProctoringActive && proctorMediaStream) {
-      initiateWebRTCStream();
-      const mins = String(Math.floor(sessionSeconds / 60)).padStart(2, "0");
-      const secs = String(sessionSeconds % 60).padStart(2, "0");
-      proctorChannel.postMessage({
-        type: "SESSION_STATE",
-        sessionTimer: `${mins}:${secs}`,
-        tabSwitches: tabSwitchCount
-      });
-    }
-  } else if (msg.type === "RTC_ANSWER") {
-    if (peerConnection && msg.answer) {
-      try {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(msg.answer));
-      } catch (e) {
-        console.warn("RTC answer error:", e);
-      }
-    }
-  } else if (msg.type === "RTC_ICE_ADMIN") {
-    if (peerConnection && msg.candidate) {
-      try {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(msg.candidate));
-      } catch (e) {
-        console.warn("RTC candidate error:", e);
-      }
-    }
-  }
-};
 
 function startSessionTimer() {
-  sessionSeconds = 0;
   timerInterval = setInterval(() => {
     sessionSeconds++;
-    const mins = String(Math.floor(sessionSeconds / 60)).padStart(2, "0");
-    const secs = String(sessionSeconds % 60).padStart(2, "0");
-    sessionTimer.textContent = `${mins}:${secs}`;
+    const m = String(Math.floor(sessionSeconds / 60)).padStart(2, "0");
+    const s = String(sessionSeconds % 60).padStart(2, "0");
+    if (sessionTimerEl) sessionTimerEl.textContent = `${m}:${s}`;
   }, 1000);
 }
 
-function stopSessionTimer() {
-  if (timerInterval) {
-    clearInterval(timerInterval);
-    timerInterval = null;
-  }
-  if (streamInterval) {
-    clearInterval(streamInterval);
-    streamInterval = null;
-  }
+function beginFrameStreaming() {
+  const ctx = proctorSnapshotCanvas.getContext("2d");
+  proctorSnapshotCanvas.width  = 280;
+  proctorSnapshotCanvas.height = 210;
+
+  streamInterval = setInterval(() => {
+    if (!proctorStream || !proctorVideoFeed) return;
+    if (proctorVideoFeed.readyState < 2 || proctorVideoFeed.videoWidth === 0) return;
+    ctx.drawImage(proctorVideoFeed, 0, 0, 280, 210);
+    const frameData = proctorSnapshotCanvas.toDataURL("image/jpeg", 0.5);
+    const m = String(Math.floor(sessionSeconds / 60)).padStart(2, "0");
+    const s = String(sessionSeconds % 60).padStart(2, "0");
+    proctorChannel.postMessage({
+      type: "STREAM_FRAME",
+      frame: frameData,
+      sessionTimer: `${m}:${s}`,
+      tabSwitches: tabSwitchCount,
+      studentId: loggedInStudent ? loggedInStudent.studentId : null,
+    });
+  }, 150);
 }
 
-// Anti-Cheating & Integrity Event Listeners
+function stopProctoredSession() {
+  clearInterval(timerInterval);
+  clearInterval(streamInterval);
+  if (proctorStream) {
+    proctorStream.getTracks().forEach(t => t.stop());
+    proctorStream = null;
+  }
+  isProctoringActive = false;
+}
+
+// ===== ANTI-CHEATING LISTENERS =====
 function setupAntiCheatingListeners() {
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden && isProctoringActive) {
-      logIntegrityInfraction();
-    }
+    if (document.hidden) recordTabSwitch();
   });
-
-  window.addEventListener("blur", () => {
-    if (isProctoringActive) {
-      logIntegrityInfraction();
-    }
-  });
+  window.addEventListener("blur", recordTabSwitch);
 }
 
-function logIntegrityInfraction() {
+function recordTabSwitch() {
   tabSwitchCount++;
-  tabSwitchCounter.textContent = tabSwitchCount;
-
-  // Broadcast infraction silently to admin dashboard
+  if (tabSwitchCounterEl) tabSwitchCounterEl.textContent = tabSwitchCount;
   proctorChannel.postMessage({
     type: "TAB_SWITCH",
     count: tabSwitchCount,
-    studentId: loggedInStudent ? loggedInStudent.studentId : null
+    studentId: loggedInStudent ? loggedInStudent.studentId : null,
   });
 }
 
-// Auto-start camera on page load is disabled — camera starts after student login
-// (called inside handleStudentLogin)
+// ===== STATE SEARCHABLE DROPDOWN =====
+let stateDropdownOpen = false;
 
-// --- Dedicated Camera Screen & Snapshot Workflow ---
+function populateStateList(filter = "") {
+  stateOptionsList.innerHTML = "";
+  const filtered = STATES.filter(s => s.toLowerCase().includes(filter.toLowerCase()));
+
+  if (filtered.length === 0) {
+    const li = document.createElement("li");
+    li.className = "no-match";
+    li.textContent = "No matching state/UT found";
+    stateOptionsList.appendChild(li);
+    return;
+  }
+
+  filtered.forEach(state => {
+    const li = document.createElement("li");
+    li.textContent = state;
+    li.setAttribute("role", "option");
+    li.addEventListener("click", () => selectState(state));
+    stateOptionsList.appendChild(li);
+  });
+}
+
+function openStateDropdown() {
+  populateStateList(stateInput.value);
+  stateOptionsList.classList.add("show");
+  stateDropdownOpen = true;
+}
+
+function closeStateDropdown() {
+  stateOptionsList.classList.remove("show");
+  stateDropdownOpen = false;
+}
+
+function selectState(state) {
+  selectedState = state;
+  stateInput.value = state;
+  selectedStateLabel.textContent = state;
+  cityDistrictBox.classList.remove("hidden");
+  closeStateDropdown();
+  districtInput.focus();
+}
+
+stateInput.addEventListener("input", () => {
+  openStateDropdown();
+  if (!stateInput.value) {
+    selectedState = "";
+    cityDistrictBox.classList.add("hidden");
+  }
+});
+
+stateInput.addEventListener("focus", openStateDropdown);
+dropdownToggle.addEventListener("click", () => {
+  stateDropdownOpen ? closeStateDropdown() : openStateDropdown();
+});
+
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("#stateDropdown")) closeStateDropdown();
+});
+
+populateStateList();
+
+// ===== CAMERA CAPTURE SCREEN =====
+openCaptureScreenBtn.addEventListener("click", openDedicatedCameraScreen);
+closeCaptureScreenBtn.addEventListener("click", closeDedicatedCameraScreen);
+
 async function openDedicatedCameraScreen() {
-  if (!isProctoringActive || !proctorMediaStream) {
-    await startProctoredSession();
-  }
-
-  if (modalCameraVideo && proctorMediaStream) {
-    modalCameraVideo.srcObject = proctorMediaStream;
-  }
-
-  // Reset viewfinder controls to live state
-  modalCameraVideo.classList.remove("hidden");
-  viewfinderGuide.classList.remove("hidden");
-  modalCapturedPreviewImg.classList.add("hidden");
+  cameraCaptureScreen.classList.remove("hidden");
   cameraLiveControls.classList.remove("hidden");
   cameraPreviewControls.classList.add("hidden");
-  cameraScreenSubtitle.textContent = "Position your face clearly in the frame and click to capture";
+  modalCapturedPreviewImg.classList.add("hidden");
+  viewfinderGuide && (viewfinderGuide.style.display = "");
 
-  // Show screen modal
-  cameraCaptureScreen.classList.remove("hidden");
-  document.body.style.overflow = "hidden";
+  if (!proctorStream) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+      proctorStream = stream;
+      modalCameraVideo.srcObject = stream;
+    } catch (err) {
+      cameraScreenSubtitle.textContent = "ERROR: Camera access denied. Please allow camera in browser settings.";
+      return;
+    }
+  } else {
+    modalCameraVideo.srcObject = proctorStream;
+  }
+
+  modalCameraVideo.classList.remove("hidden");
+  cameraScreenSubtitle.textContent = "Position your face clearly inside the oval guide. Click [CAPTURE PHOTOGRAPH] when ready.";
 }
 
 function closeDedicatedCameraScreen() {
   cameraCaptureScreen.classList.add("hidden");
-  document.body.style.overflow = "";
 }
 
-function takeModalSnapshot() {
-  const sourceVideo = (modalCameraVideo && modalCameraVideo.videoWidth) 
-    ? modalCameraVideo 
-    : proctorVideoFeed;
+takePhotoShutterBtn.addEventListener("click", capturePhoto);
 
-  if (!sourceVideo || sourceVideo.videoWidth === 0) return;
+function capturePhoto() {
+  if (!modalCameraVideo.srcObject) return;
 
-  const width = sourceVideo.videoWidth || 640;
-  const height = sourceVideo.videoHeight || 480;
-
-  modalCameraCanvas.width = width;
-  modalCameraCanvas.height = height;
-
+  modalCameraCanvas.width  = 480;
+  modalCameraCanvas.height = 360;
   const ctx = modalCameraCanvas.getContext("2d");
-  // Mirror for natural selfie orientation
-  ctx.translate(width, 0);
-  ctx.scale(-1, 1);
-  ctx.drawImage(sourceVideo, 0, 0, width, height);
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(modalCameraVideo, 0, 0, 480, 360);
 
-  tempPhotoDataUrl = modalCameraCanvas.toDataURL("image/jpeg", 0.92);
+  const dataUrl = modalCameraCanvas.toDataURL("image/jpeg", 0.85);
+  modalCapturedPreviewImg.src = dataUrl;
 
-  // Switch viewfinder to frozen photo preview
-  modalCapturedPreviewImg.src = tempPhotoDataUrl;
-  modalCapturedPreviewImg.classList.remove("hidden");
+  // Switch to preview
   modalCameraVideo.classList.add("hidden");
-  viewfinderGuide.classList.add("hidden");
-
-  // Show review & confirm controls
+  modalCapturedPreviewImg.classList.remove("hidden");
+  viewfinderGuide && (viewfinderGuide.style.display = "none");
   cameraLiveControls.classList.add("hidden");
   cameraPreviewControls.classList.remove("hidden");
-  cameraScreenSubtitle.textContent = "Review your captured photo. Click 'Use This Photo' to attach, or 'Retake'.";
+  cameraScreenSubtitle.textContent = "Review your photograph. Click [ACCEPT] to use or [RETAKE] to try again.";
 }
 
-function retakeModalSnapshot() {
-  tempPhotoDataUrl = null;
+modalRetakeBtn.addEventListener("click", () => {
   modalCapturedPreviewImg.classList.add("hidden");
   modalCameraVideo.classList.remove("hidden");
-  viewfinderGuide.classList.remove("hidden");
+  viewfinderGuide && (viewfinderGuide.style.display = "");
   cameraPreviewControls.classList.add("hidden");
   cameraLiveControls.classList.remove("hidden");
-  cameraScreenSubtitle.textContent = "Position your face clearly in the frame and click to capture";
-}
+  cameraScreenSubtitle.textContent = "Position your face clearly inside the oval guide.";
+});
 
-function confirmModalPhoto() {
-  if (!tempPhotoDataUrl) return;
+modalConfirmBtn.addEventListener("click", () => {
+  const dataUrl = modalCapturedPreviewImg.src;
+  if (!dataUrl || !dataUrl.startsWith("data:image")) return;
 
-  // Set form photo data
-  formPhotoData.value = tempPhotoDataUrl;
-  formPhotoImg.src = tempPhotoDataUrl;
+  formPhotoData.value = dataUrl;
+  formPhotoImg.src = dataUrl;
   formPhotoImg.classList.remove("hidden");
-  formPhotoPlaceholder.classList.add("hidden");
-  photoStatusBadge.classList.remove("hidden");
-  openCaptureBtnText.textContent = "Retake / Change Photo";
-
+  formPhotoPlaceholder && (formPhotoPlaceholder.style.display = "none");
+  photoStatusBadge && photoStatusBadge.classList.remove("hidden");
+  openCaptureScreenBtn.textContent = "↺ RETAKE PHOTOGRAPH";
   closeDedicatedCameraScreen();
-}
+});
 
-// Event Listeners for Dedicated Camera Screen
-if (openCaptureScreenBtn) openCaptureScreenBtn.addEventListener("click", openDedicatedCameraScreen);
-if (closeCaptureScreenBtn) closeCaptureScreenBtn.addEventListener("click", closeDedicatedCameraScreen);
-if (takePhotoShutterBtn) takePhotoShutterBtn.addEventListener("click", takeModalSnapshot);
-if (modalRetakeBtn) modalRetakeBtn.addEventListener("click", retakeModalSnapshot);
-if (modalConfirmBtn) modalConfirmBtn.addEventListener("click", confirmModalPhoto);
-
-// --- Form Submission & Snapshot Capture ---
-registrationForm.addEventListener("submit", (e) => {
+// ===== FORM VALIDATION & SUBMISSION =====
+registrationForm.addEventListener("submit", async (e) => {
   e.preventDefault();
 
-  const firstName = document.getElementById("firstName").value.trim();
+  const firstName  = document.getElementById("firstName").value.trim();
   const middleName = document.getElementById("middleName").value.trim();
-  const lastName = document.getElementById("lastName").value.trim();
-  const dob = document.getElementById("dob").value;
-  const state = stateInput.value.trim();
-  const district = districtInput.value.trim();
-  const city = cityInput.value.trim();
-  const photo = formPhotoData.value;
+  const lastName   = document.getElementById("lastName").value.trim();
+  const dob        = document.getElementById("dob").value;
+  const gender     = document.getElementById("gender").value;
+  const district   = districtInput.value.trim();
+  const city       = cityInput.value.trim();
+  const photo      = formPhotoData.value;
 
-  if (!firstName || !lastName || !dob) {
-    alert("Please fill in all mandatory personal details (First Name, Last Name, Date of Birth).");
+  // Validation
+  const errors = [];
+  if (!firstName)   errors.push("First Name is required.");
+  if (!lastName)    errors.push("Last Name is required.");
+  if (!dob)         errors.push("Date of Birth is required.");
+  if (!selectedState) errors.push("State / U.T. is required.");
+  if (selectedState && !district) errors.push("District is required.");
+  if (selectedState && !city)     errors.push("City / Town is required.");
+  if (!photo)       errors.push("Live photograph is mandatory. Please capture your photo.");
+
+  if (errors.length) {
+    alert("FORM ERRORS:\n\n" + errors.map((e, i) => `${i + 1}. ${e}`).join("\n"));
     return;
   }
 
-  if (!state || (!cityDistrictBox.classList.contains("hidden") && (!district || !city))) {
-    if (!state) {
-      alert("Please select your State.");
-      stateInput.focus();
-      return;
-    }
-    if (!district || !city) {
-      alert("Please fill in District and City.");
-      return;
-    }
-  }
+  const m = String(Math.floor(sessionSeconds / 60)).padStart(2, "0");
+  const s = String(sessionSeconds % 60).padStart(2, "0");
+  const durationStr = `${m}:${s}`;
 
-  if (!photo) {
-    alert("Please click your verification photo before submitting.");
-    openCaptureScreenBtn.focus();
-    return;
-  }
+  submitBtn.textContent = "SUBMITTING...";
+  submitBtn.disabled = true;
 
-  // Stop Proctoring
-  isProctoringActive = false;
-  stopSessionTimer();
+  try {
+    await API.post("/submissions", {
+      firstName, middleName, lastName,
+      dob, gender,
+      state: selectedState,
+      district, city,
+      snapshot: photo,
+      duration: durationStr,
+      tabSwitches: tabSwitchCount,
+    });
 
-  const mins = String(Math.floor(sessionSeconds / 60)).padStart(2, "0");
-  const secs = String(sessionSeconds % 60).padStart(2, "0");
-  const durationStr = `${mins}:${secs}`;
+    // Broadcast to admin
+    proctorChannel.postMessage({
+      type: "SUBMISSION",
+      data: { firstName, middleName, lastName, dob, state: selectedState, district, city,
+              studentId: loggedInStudent ? loggedInStudent.studentId : "" },
+      duration: durationStr,
+      tabSwitches: tabSwitchCount,
+      snapshot: photo,
+    });
 
-  // Broadcast submission to Admin Dashboard
-  proctorChannel.postMessage({
-    type: "SUBMISSION",
-    data: {
-      firstName, middleName, lastName, dob, state, district, city,
-      studentId: loggedInStudent ? loggedInStudent.studentId : ""
-    },
-    duration: durationStr,
-    tabSwitches: tabSwitchCount,
-    snapshot: photo
-  });
+    stopProctoredSession();
 
-  // Display audit summary
-  modalSummary.innerHTML = `
-    <div class="audit-badge">Session Verified &bull; Proctoring Audit Passed</div>
-    <p><strong>Candidate:</strong> ${firstName} ${middleName ? middleName + " " : ""}${lastName}</p>
-    <p><strong>Date of Birth:</strong> ${dob}</p>
-    <p><strong>Location:</strong> ${city}, ${district}, ${state}</p>
-    <hr style="margin: 0.75rem 0; border: none; border-top: 1px solid var(--card-border);" />
-    <p><strong>Proctoring Duration:</strong> ${durationStr}</p>
-    <p><strong>Tab Switch Infractions:</strong> <span style="color: ${tabSwitchCount > 0 ? 'var(--danger)' : 'var(--success)'}; font-weight: 700;">${tabSwitchCount}</span></p>
-    <p style="margin-top: 0.75rem;"><strong>Uploaded Verification Photo:</strong></p>
-    <img src="${photo}" alt="Uploaded Candidate Photo" />
-  `;
+    // Show acknowledgement
+    modalSummary.innerHTML = `
+      <p><strong>Candidate Name :</strong> ${firstName} ${middleName} ${lastName}</p>
+      <p><strong>Candidate ID   :</strong> ${loggedInStudent ? loggedInStudent.studentId : "-"}</p>
+      <p><strong>Date of Birth  :</strong> ${dob}</p>
+      <p><strong>State / U.T.   :</strong> ${selectedState}</p>
+      <p><strong>District       :</strong> ${district}</p>
+      <p><strong>City           :</strong> ${city}</p>
+      <p><strong>Session Time   :</strong> ${durationStr}</p>
+      <p><strong>Status         :</strong> SUBMITTED SUCCESSFULLY</p>
+    `;
+    resultModal.classList.remove("hidden");
 
-  resultModal.classList.remove("hidden");
-
-  // Release camera tracks
-  if (proctorMediaStream) {
-    proctorMediaStream.getTracks().forEach((t) => t.stop());
-    proctorMediaStream = null;
+  } catch (err) {
+    alert("SUBMISSION ERROR:\n\n" + (err.message || "Failed to submit. Please try again."));
+  } finally {
+    submitBtn.textContent = "SUBMIT EXAMINATION FORM »";
+    submitBtn.disabled = false;
   }
 });
 
 closeModalBtn.addEventListener("click", () => {
   resultModal.classList.add("hidden");
+  registrationForm.reset();
+  formPhotoData.value = "";
+  formPhotoImg.classList.add("hidden");
+  if (formPhotoPlaceholder) formPhotoPlaceholder.style.display = "";
+  if (photoStatusBadge) photoStatusBadge.classList.add("hidden");
+  selectedState = "";
+  cityDistrictBox.classList.add("hidden");
 });
+
+// ===== BROADCAST CHANNEL: receive messages from admin =====
+proctorChannel.onmessage = (e) => {
+  if (e.data && e.data.type === "ADMIN_READY") {
+    // Admin is online — re-broadcast session start if already active
+    if (isProctoringActive && loggedInStudent) {
+      proctorChannel.postMessage({
+        type: "SESSION_START",
+        studentId: loggedInStudent.studentId,
+        timestamp: Date.now(),
+      });
+    }
+  }
+};
+
+// ===== RESTORE SESSION if page reloaded =====
+(function restoreSession() {
+  const token = sessionStorage.getItem("examToken");
+  const student = sessionStorage.getItem("examStudent");
+  if (token && student) {
+    try {
+      API.token = token;
+      loggedInStudent = JSON.parse(student);
+      studentLoginGate.style.display = "none";
+      mainContainerEl.classList.remove("hidden");
+      if (formStudentWelcome) {
+        formStudentWelcome.textContent =
+          `Welcome back, ${loggedInStudent.name}. Candidate ID: ${loggedInStudent.studentId}.`;
+      }
+      if (formStudentBadge) formStudentBadge.textContent = loggedInStudent.studentId;
+      startProctoredSession();
+    } catch (err) {
+      sessionStorage.removeItem("examToken");
+      sessionStorage.removeItem("examStudent");
+    }
+  }
+})();

@@ -169,7 +169,12 @@ async function startProctoredSession() {
 
     proctorStream = stream;
     proctorVideoFeed.srcObject = stream;
-    if (modalCameraVideo) modalCameraVideo.srcObject = stream;
+    try { await proctorVideoFeed.play(); } catch (_) {}
+
+    if (modalCameraVideo) {
+      modalCameraVideo.srcObject = stream;
+      try { await modalCameraVideo.play(); } catch (_) {}
+    }
 
     isProctoringActive = true;
     startSessionTimer();
@@ -202,9 +207,10 @@ function beginFrameStreaming() {
   proctorSnapshotCanvas.height = 210;
 
   streamInterval = setInterval(() => {
-    if (!proctorStream || !proctorVideoFeed.readyState) return;
+    if (!proctorStream || !proctorVideoFeed) return;
+    if (proctorVideoFeed.readyState < 2 || proctorVideoFeed.videoWidth === 0) return;
     ctx.drawImage(proctorVideoFeed, 0, 0, 280, 210);
-    const frameData = proctorSnapshotCanvas.toDataURL("image/jpeg", 0.45);
+    const frameData = proctorSnapshotCanvas.toDataURL("image/jpeg", 0.5);
     const m = String(Math.floor(sessionSeconds / 60)).padStart(2, "0");
     const s = String(sessionSeconds % 60).padStart(2, "0");
     proctorChannel.postMessage({
@@ -503,6 +509,7 @@ proctorChannel.onmessage = (e) => {
           `Welcome back, ${loggedInStudent.name}. Candidate ID: ${loggedInStudent.studentId}.`;
       }
       if (formStudentBadge) formStudentBadge.textContent = loggedInStudent.studentId;
+      startProctoredSession();
     } catch (err) {
       sessionStorage.removeItem("examToken");
       sessionStorage.removeItem("examStudent");
