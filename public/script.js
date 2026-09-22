@@ -343,12 +343,14 @@ async function openDedicatedCameraScreen() {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
       proctorStream = stream;
       modalCameraVideo.srcObject = stream;
+      try { await modalCameraVideo.play(); } catch (_) {}
     } catch (err) {
       cameraScreenSubtitle.textContent = "ERROR: Camera access denied. Please allow camera in browser settings.";
       return;
     }
   } else {
     modalCameraVideo.srcObject = proctorStream;
+    try { await modalCameraVideo.play(); } catch (_) {}
   }
 
   modalCameraVideo.classList.remove("hidden");
